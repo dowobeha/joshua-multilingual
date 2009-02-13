@@ -22,6 +22,7 @@ public class Hypothesis {
 //	final int coverageSize2;
 	
 	final List<Float> score;
+	final List<Float> distortionCost;
 //	final float score1;
 //	final float score2;
 	
@@ -37,10 +38,12 @@ public class Hypothesis {
 		//int n = coverageLength.size();
 		this.coverageVector = new ArrayList<BitSet>(n);
 		this.score = new ArrayList<Float>(n);
+		this.distortionCost = new ArrayList<Float>(n);
 		
 		for (int i=0; i<n; i++) {
 			this.coverageVector.add(new BitSet());
 			this.score.add(0.0f);
+			this.distortionCost.add(0.0f);
 		}
 		
 //		this.coverageVector1 = new BitSet();
@@ -51,7 +54,7 @@ public class Hypothesis {
 		this.target = Collections.emptyList();
 	}
 	
-	public Hypothesis(Hypothesis previous, List<String> target, List<BitSet> coverageVectors, List<Float> scores) {
+	public Hypothesis(Hypothesis previous, List<String> target, List<BitSet> coverageVectors, List<Float> scores, List<Float> distortionCosts) {
 //	public Hypothesis(Hypothesis previous, List<String> target, BitSet coverageVector, BitSet constraintCoverageVector, int coverageSize, int constraintCoverageSize, float score, float constraintScore) {
 //		this.coverageSize1 = coverageSize;
 //		this.coverageSize2 = constraintCoverageSize;
@@ -59,10 +62,14 @@ public class Hypothesis {
 		this.coverageVector = coverageVectors;
 //		this.coverageLength = coverageLengths;
 		this.score = scores;
+		this.distortionCost = distortionCosts;
 		
 		float cumulativeScore = 0.0f;
 		for (float score : this.score) {
 			cumulativeScore += score;
+		}
+		for (float distortionCost : this.distortionCost) {
+			cumulativeScore += distortionCost;
 		}
 		this.cumulativeScore = cumulativeScore;
 		
@@ -104,6 +111,14 @@ public class Hypothesis {
 	public String getTranslation() {
 		StringBuilder s = new StringBuilder();
 		
+		if (previous != null) {
+			String prevTranslation = previous.getTranslation();
+			if (!"".equals(prevTranslation)) {
+				s.append(prevTranslation);
+				s.append(' ');
+			}
+		}
+		
 		if (target != null && target.size() > 0) {
 			for (int i=0; i<target.size()-1; i++) {
 				s.append(target.get(i));
@@ -111,14 +126,12 @@ public class Hypothesis {
 			}
 			s.append(target.get(target.size()-1));
 			
-			if (previous != null) {
-				s.append(' ');
-			}
+//			if (previous != null) {
+//				s.append(' ');
+//			}
 		}
 		
-		if (previous != null) {
-			s.append(previous.getTranslation());
-		}
+
 		
 		return s.toString();
 	}
@@ -138,6 +151,11 @@ public class Hypothesis {
 			s.append(score);
 		}
 
+		for (float cost : this.distortionCost) {
+			s.append(" ||| ");
+			s.append(cost);
+		}
+		
 		s.append('\'');
 		
 		

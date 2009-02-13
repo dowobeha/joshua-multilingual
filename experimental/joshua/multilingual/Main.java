@@ -38,6 +38,7 @@ public class Main {
 	
 	static int maxPhraseLength = 5;
 	static Settings settings = new Settings(maxPhraseLength);
+	static float distortionParameter = 2.0f;
 	
 	/**
 	 * @param args
@@ -126,8 +127,11 @@ public class Main {
 			if (bestHypothesis == null) {
 				logger.warning("No best translation found");
 			} else {
-				for (Hypothesis current = bestHypothesis; current != null; current = current.previous) {
-					logger.info(current.toString());
+				if (logger.isLoggable(Level.FINE)) {
+					logger.fine("Best final hypothesis: " + bestHypothesis);
+					for (Hypothesis current = bestHypothesis; current != null; current = current.previous) {
+						logger.fine(current.toString());
+					}
 				}
 				logger.info("Found translation: \"" + bestHypothesis.getTranslation() + "\"");
 			}
@@ -141,6 +145,8 @@ public class Main {
 		
 		//int coverage1Arity = hypothesisToExtend.coverageCardinality(0);
 		BitSet coverageVector2 = hypothesisToExtend.coverageVector.get(1);
+		int source2NextClearBit = hypothesisToExtend.coverageVector.get(1).nextClearBit(0);
+		int source2NextSetBit = hypothesisToExtend.coverageVector.get(1).nextSetBit(0);
 		
 		for (int i1=0; i1<translationOptions1.size(); i1++) {
 			
@@ -155,11 +161,11 @@ public class Main {
 				// Get the set of source2 reverse rules that match the partial translation
 				BilingualRuleCollection reverseRules2 = reverseTable2.get(targetWords);
 				
-				List<BitSet> source1SubLists = new ArrayList<BitSet>();
-				
 				// Find all locations in source1 where sourcePhrase1 is applicable
 				List<String> sourcePhrase1 = translationOptions1.lhs;
 				List<Integer> sourcePhrase1Matches = indicesOfSubList(source1, sourcePhrase1);
+				List<Float> source1DistortionCosts = calculateDistortionCosts(sourcePhrase1Matches, hypothesisToExtend.coverageVector.get(0).nextClearBit(0), hypothesisToExtend.coverageVector.get(0).nextSetBit(0));
+				List<BitSet> source1SubLists = new ArrayList<BitSet>();
 				if (logger.isLoggable(Level.FINE)) logger.fine("Source 1 phrase " + sourcePhrase1 + " matches input 1 in " + sourcePhrase1Matches.size() + " places.");
 				for (int j1 : sourcePhrase1Matches) {
 					BitSet newCoverageVector1 = new BitSet();
@@ -188,14 +194,20 @@ public class Main {
 							if (logger.isLoggable(Level.FINE)) logger.fine("Source 2 phrase " + sourcePhrase2 + " matches input 2 at " + newCoverageVector2.nextSetBit(0));
 							newCoverageVector2.or(coverageVector2);
 							
+							float distortionCost2 = calculateDistortionCost(j2, source2NextClearBit, source2NextSetBit);
 							
-							for (BitSet newCoverageVector1 : source1SubLists) {
+							for (int k1=0; k1<source1SubLists.size(); k1++) {
+//							for (BitSet newCoverageVector1 : source1SubLists) {
 								
-								List<BitSet> newCoverageVectors = new ArrayBackedList<BitSet>(newCoverageVector1, newCoverageVector2);
+								BitSet newCoverageVector1 = source1SubLists.get(k1);
+								float distortionCost1 = source1DistortionCosts.get(k1);
+								
+								List<Float> distortionCosts = new ArrayBackedList<Float>(distortionCost1, distortionCost2);
 								List<Float> newScores = new ArrayBackedList<Float>(score1, score2);
+								List<BitSet> newCoverageVectors = new ArrayBackedList<BitSet>(newCoverageVector1, newCoverageVector2);
 								
-								logger.finest("Extending hypothesis: " + hypothesisToExtend + "   (coverage vectors==" + newCoverageVectors + ", scores==" + newScores + ")");
-								Hypothesis hypothesis = new Hypothesis(hypothesisToExtend, targetWords, newCoverageVectors, newScores);
+								logger.finest("Extending hypothesis: " + hypothesisToExtend + " from stack " + hypothesisToExtend.coverageCardinality(0) + " with sourcePhrase1==" + sourcePhrase1 + " and sourcePhrase2 " + sourcePhrase2 + "  (coverage vectors==" + newCoverageVectors + ", scores==" + newScores + ", distortionCosts==" + distortionCosts + ")");
+								Hypothesis hypothesis = new Hypothesis(hypothesisToExtend, targetWords, newCoverageVectors, newScores, distortionCosts);
 								
 								int stackNumber = hypothesis.coverageCardinality(0);
 								logger.finest("Adding to stack " + stackNumber + " : " + hypothesis);
@@ -232,6 +244,58 @@ public class Main {
 			}
 		}
 		
+	}
+	
+	static List<Float> calculateDistortionCosts(List<Integer> indices, int nextClearIndex, int nextSetIndex) {
+		List<Float> costs = new ArrayList<Float>(indices.size());
+		
+		for (int index : indices) {
+			
+//			int distance;
+//			
+//			if (nextSetIndex > nextClearIndex) {
+//				distance = nextSetIndex - index;
+//			} else {
+//				distance = nextClearIndex - index;
+//			}
+//			if (distance < 0) distance *= -1;
+//			
+//			costs.add((float) Math.pow(Main.distortionParameter, distance));
+			costs.add(calculateDistortionCost(index, nextClearIndex, nextSetIndex));
+			
+		}
+		
+		
+		return costs;
+	}
+	
+	static float calculateDistortionCost(int index, int nextClearIndex, int nextSetIndex) {
+
+			if (nextSetIndex < 0) nextSetIndex = 0;
+		
+			int distance;
+			float cost;
+			
+			if (nextSetIndex > nextClearIndex) {
+				distance = nextSetIndex - index;
+			} else {
+				distance = nextClearIndex - index;
+			}
+			if (distance == 0) {
+				cost = 0.0f;
+			} else {
+				if (distance < 0) distance *= -1;
+				cost = (float) Math.pow(Main.distortionParameter, distance);
+				cost *= -1.0f;
+			}
+			
+			if (nextSetIndex > nextClearIndex)
+				logger.finest("Calculating distortion cost: Math.pow(" + Main.distortionParameter + ", (|" + nextSetIndex + "-" + index + "|) == " + cost);
+			else
+				logger.finest("Calculating distortion cost: Math.pow(" + Main.distortionParameter + ", (|" + nextClearIndex + "-" + index + "|) == " + cost);
+			
+			return cost;
+			
 	}
 	
 	// Based on algorithm from Collections.indexOfSubList
