@@ -14,14 +14,16 @@ import joshua.util.sentence.Span;
 public class PhraseTable extends HashMap<List<String>,BilingualRuleCollection> {
 
 	int size;
+	final int sourceID;
 	
-	public PhraseTable(String filename) throws FileNotFoundException {
-		this(filename, Direction.Normal);
+	public PhraseTable(String filename, int sourceID) throws FileNotFoundException {
+		this(filename, Direction.Normal, sourceID);
 	}
 	
-	public PhraseTable(String filename, Direction direction) throws FileNotFoundException {
+	public PhraseTable(String filename, Direction direction, int sourceID) throws FileNotFoundException {
 		Scanner scanner = new Scanner(new File(filename));
 		
+		this.sourceID = sourceID;
 		this.size = 0;
 		
 		while (scanner.hasNext()) {
@@ -63,7 +65,7 @@ public class PhraseTable extends HashMap<List<String>,BilingualRuleCollection> {
 		
 		ArrayList<BilingualRuleCollection> result = new ArrayList<BilingualRuleCollection>();
 		
-		for (Span span : hypothesisToExtend.getExtendableSourceSpans(Main.settings.MAX_PHRASE_LENGTH)) {
+		for (Span span : hypothesisToExtend.getExtendableSourceSpans(this.sourceID, inputWords.size(), Main.settings.MAX_PHRASE_LENGTH)) {
 			BilingualRuleCollection collection = this.get(inputWords.subList(span.start, span.end));
 			
 			if (collection != null) {

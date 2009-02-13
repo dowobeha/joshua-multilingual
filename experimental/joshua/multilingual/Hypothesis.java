@@ -11,42 +11,80 @@ import joshua.util.sentence.Span;
 public class Hypothesis {
 
 	final Hypothesis previous;
-	final BitSet coverageVector;
-	//final BitSet constraintoverageVector;
-	
-	final int coverageSize;
-	
-	final float score;
-	final float cumulativeScore;
-	
 	final List<String> target;
 	
-	public Hypothesis(int coverageSize) {
-		this.coverageSize = coverageSize;
+	final List<BitSet> coverageVector;
+//	final BitSet coverageVector1;
+//	final BitSet constraintVector2;
+	
+	//final List<Integer> coverageLength;
+//	final int coverageSize1;
+//	final int coverageSize2;
+	
+	final List<Float> score;
+//	final float score1;
+//	final float score2;
+	
+	final float cumulativeScore;
+	
+	public Hypothesis(int n) {
+	//public Hypothesis(List<Integer> coverageLength) { //int coverageSize, int constraintCoverageSize) {
+		//this.coverageLength = coverageLength;
+//		this.coverageSize1 = coverageSize;
+//		this.coverageSize2 = constraintCoverageSize;
 		this.previous = null;
-		this.coverageVector = new BitSet();
+		
+		//int n = coverageLength.size();
+		this.coverageVector = new ArrayList<BitSet>(n);
+		this.score = new ArrayList<Float>(n);
+		
+		for (int i=0; i<n; i++) {
+			this.coverageVector.add(new BitSet());
+			this.score.add(0.0f);
+		}
+		
+//		this.coverageVector1 = new BitSet();
+//		this.constraintVector2 = new BitSet();
 		this.cumulativeScore = 0.0f;
-		this.score = 0.0f;
+//		this.score1 = 0.0f;
+//		this.score2 = 0.0f;
 		this.target = Collections.emptyList();
 	}
 	
-	public Hypothesis(Hypothesis previous, List<String> target, BitSet coverageVector, int coverageSize, float score) {
-		this.coverageSize = coverageSize;
+	public Hypothesis(Hypothesis previous, List<String> target, List<BitSet> coverageVectors, List<Float> scores) {
+//	public Hypothesis(Hypothesis previous, List<String> target, BitSet coverageVector, BitSet constraintCoverageVector, int coverageSize, int constraintCoverageSize, float score, float constraintScore) {
+//		this.coverageSize1 = coverageSize;
+//		this.coverageSize2 = constraintCoverageSize;
 		this.previous = previous;
-		this.coverageVector = coverageVector;
-		this.cumulativeScore = previous.cumulativeScore + score;
-		this.score = score;
+		this.coverageVector = coverageVectors;
+//		this.coverageLength = coverageLengths;
+		this.score = scores;
+		
+		float cumulativeScore = 0.0f;
+		for (float score : this.score) {
+			cumulativeScore += score;
+		}
+		this.cumulativeScore = cumulativeScore;
+		
+//		this.constraintVector2 = constraintCoverageVector;
+//		this.coverageVector1 = coverageVector;
+//		this.cumulativeScore = previous.cumulativeScore + score;
+//		this.score1 = score;
+//		this.score2 = constraintScore;
 		this.target = target;
 	}	
 	
-	public Collection<Span> getExtendableSourceSpans(int maxPhraseLength) {
+	public Collection<Span> getExtendableSourceSpans(int sourceID, int maxCoverageLength, int maxPhraseLength) {
+		
+		BitSet coverageVector = this.coverageVector.get(sourceID);
+		int coverageLength = maxCoverageLength;//this.coverageLength.get(sourceID); 
 		
 		ArrayList<Span> spans = new ArrayList<Span>();
 		
-		for (int i=coverageVector.nextClearBit(0); i>=0 && i<coverageSize; i=coverageVector.nextClearBit(i+1)) {
+		for (int i=coverageVector.nextClearBit(0); i>=0 && i<coverageLength; i=coverageVector.nextClearBit(i+1)) {
 			
 			int last = coverageVector.nextSetBit(i);
-			if (last < 0) last = coverageSize;
+			if (last < 0) last = coverageLength;
 			if (last > i + Main.settings.MAX_PHRASE_LENGTH) last = i + Main.settings.MAX_PHRASE_LENGTH;
 			
 			for (int j=i+1; j<=last; j++) {
@@ -56,16 +94,11 @@ public class Hypothesis {
 			}
 		}
 		
-//		for(int i=coverageVector.nextClearBit(0), j=coverageVector.nextSetBit(i+1); i>=0; i=j, j=coverageVector.nextSetBit(j+1)) {
-//			
-//		}
-//		
-		//throw new RuntimeException();
 		return spans;
 	}
 	
-	public int coverage() {
-		return coverageVector.cardinality();
+	public int coverageCardinality(int sourceID) {
+		return coverageVector.get(sourceID).cardinality();
 	}
 	
 	public String getTranslation() {
@@ -93,8 +126,6 @@ public class Hypothesis {
 	public String toString() {
 		StringBuilder s = new StringBuilder();
 		
-		//s.append(target.size());
-		
 		s.append('\'');
 		
 		for (String targetWord : target) {
@@ -102,8 +133,11 @@ public class Hypothesis {
 			s.append(' ');
 		}
 		
-		s.append("||| ");
-		s.append(score);
+		for (float score : this.score) {
+			s.append(" ||| ");
+			s.append(score);
+		}
+
 		s.append('\'');
 		
 		

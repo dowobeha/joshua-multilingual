@@ -19,12 +19,15 @@ package joshua.multilingual;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Scanner;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import joshua.util.ArrayBackedList;
+import joshua.util.ArrayBackedStringList;
 
 /**
  * @author Lane Schwartz
@@ -41,23 +44,12 @@ public class Main {
 	 * @throws FileNotFoundException 
 	 */
 	public static void main(String[] args) throws FileNotFoundException {
-		
-//		Pattern p = Pattern.compile("^(.*?) \\|\\|\\| (.*?) \\|\\|\\| .* \\|\\|\\| .* \\|\\|\\| (.*)$");
-//		Matcher m = p.matcher("ahora ||| now have ||| (0) ||| (0) () ||| 0.10396 0.468315 0.0020142 0.0085109 2.718");
-//		//boolean b = m.matches();
-//		if (m.matches()) {
-//			System.out.println(m.group(1));
-//			System.out.println(m.group(2));
-//			System.out.println(m.group(3));
-//		}
-//		else
-//			System.out.println("No match");
 				
 		// Read phrase tables
-		PhraseTable table1 = new PhraseTable(args[1]);
-		PhraseTable table2 = new PhraseTable(args[3], Direction.Reverse);
+		PhraseTable table1 = new PhraseTable(args[1], 0);
+		PhraseTable table2 = new PhraseTable(args[3], Direction.Reverse, 1);
+		logger.finer("Phrase table has " + table1.size() + " entries.");
 		
-		logger.fine("Phrase table has " + table1.size() + " entries.");
 		// Read input sentences
 		Scanner sentences1 = new Scanner(new File(args[0]));
 		Scanner sentences2 = new Scanner(new File(args[2]));
@@ -69,55 +61,44 @@ public class Main {
 			final String inputSentence1 = sentences1.nextLine();
 			final String inputSentence2 = sentences2.nextLine();
 			
-			List<String> words = new AbstractList<String>() {
+			// Store each input sentence as an list of words
+			List<String> words = new ArrayBackedStringList(inputSentence1);
+			List<String> words2 = new ArrayBackedStringList(inputSentence2);
 
-				final String[] array = inputSentence1.split("\\s+");
-				
-				@Override
-				public String get(int index) {
-					return array[index];
-				}
-
-				@Override
-				public int size() {
-					return array.length;
-				}
-				
-			};
-			//String[] words = inputSentence.split("\\W+");
-			int n = words.size();
-			logger.info("Translating \"" + inputSentence1 + "\" with " + n + " words");
+			int n1 = words.size();
+			//int n2 = words2.size();
+			
+			logger.info("Translating \"" + inputSentence1 + "\" with " + n1 + " words");
 			logger.info(" as well as \"" + inputSentence2 + "\"");
 		
 			// Construct n+1 empty stacks, where n = input1.length
-			List<HypothesisStack> stacks = new ArrayList<HypothesisStack>(n + 1);
-			for (int stackNumber=0; stackNumber<=n; stackNumber++) {
+			List<HypothesisStack> stacks = new ArrayList<HypothesisStack>(n1 + 1);
+			for (int stackNumber=0; stackNumber<=n1; stackNumber++) {
 				stacks.add(new HypothesisStack());
 			}
 			
 			// Place empty hypothesis into stack 0
-			stacks.get(0).add(new Hypothesis(n));
+			stacks.get(0).add(new Hypothesis(2));
 		
 			// For each stack from 0..n
-			for (int stackNumber=0; stackNumber<=n; stackNumber++) {
+			for (int stackNumber=0; stackNumber<=n1; stackNumber++) {
 				
-				// for each hypothesis in this stack
 				HypothesisStack stack = stacks.get(stackNumber);
-				logger.fine("Current stack is stack " + stackNumber);
+				logger.finer("Current stack is stack " + stackNumber);
 				
+				// For each hypothesis in this stack
 				for (Hypothesis hypothesis : stack) {
 				
 					// for each translation option for lang1 that is applicable
-					for (BilingualRuleCollection optionCollection : table1.getApplicableTranslationOptions(words, hypothesis)) {
+					for (BilingualRuleCollection translationOptions : table1.getApplicableTranslationOptions(words, hypothesis)) {
 				
 						// for each translation option for lang2 that pairs with translation option from lang1
 							// if translation option for lang2 is applicable
 						
-								// create new hypothesis
-								// place hypothesis in the next stack
-								// (combine hypothesis if possible)
-								// (prune stack if needed)
-						addNewHypotheses(hypothesis, optionCollection, stacks, words, table2);
+						// Create new hypotheses and place in the appropriate stack(s)
+						// (combine hypotheses if possible)
+						// (prune stacks if needed)
+						addNewHypotheses(hypothesis, translationOptions, stacks, words, words2, table2);
 					}
 				}
 			}
@@ -126,8 +107,16 @@ public class Main {
 			float bestScore = Float.NEGATIVE_INFINITY;
 			Hypothesis bestHypothesis = null;
 			int lastStackNumber = stacks.size()-1;
-			logger.info(""+lastStackNumber);
+			
+			if (logger.isLoggable(Level.FINE)) {
+				for (int i=0; i<=lastStackNumber; i++) {
+					logger.fine(stacks.get(i).size() + " hypotheses in stack " + i);
+				}
+			}
+			
+			//logger.info(""+lastStackNumber);
 			for (Hypothesis hypothesis : stacks.get(lastStackNumber)) {
+				if (logger.isLoggable(Level.FINEST)) logger.finest("Looking at final hypothesis: " + hypothesis);
 				if (hypothesis.cumulativeScore > bestScore) {
 					bestHypothesis = hypothesis;
 					bestScore = hypothesis.cumulativeScore;
@@ -146,32 +135,100 @@ public class Main {
 		
 	}
 
-	static void addNewHypotheses(Hypothesis hypothesisToExtend, BilingualRuleCollection rules, List<HypothesisStack> stacks, List<String> source, PhraseTable constraintTable) {
+	static void addNewHypotheses(Hypothesis hypothesisToExtend, 
+			BilingualRuleCollection translationOptions1, List<HypothesisStack> stacks, 
+			List<String> source1, List<String> source2, PhraseTable reverseTable2) {
 		
-		int previousCoverage = hypothesisToExtend.coverage();
+		//int coverage1Arity = hypothesisToExtend.coverageCardinality(0);
+		BitSet coverageVector2 = hypothesisToExtend.coverageVector.get(1);
 		
-		for (int i=0; i<rules.size(); i++) {
-			List<String> rhs = rules.rightHandSides.get(i);
-			float score = rules.scores.get(i);
+		for (int i1=0; i1<translationOptions1.size(); i1++) {
 			
-			if (constraintTable.containsKey(rhs)) {
-				logger.info("Constraint can translate " + rhs);
-			} else {
-				logger.info("Constraint can NOT translate " + rhs);
-			}
+			// Get a partial translation of a source1 phrase, and its score
+			List<String> targetWords = translationOptions1.rightHandSides.get(i1);
+			float score1 = translationOptions1.scores.get(i1);
 			
-			int newCoverage = rhs.size() + previousCoverage;
-			
-			for (int j : indicesOfSubList(source, rules.lhs)) {
+			// Make sure the partial translation can be generated by lang2
+			if (reverseTable2.containsKey(targetWords)) {
+				logger.fine("Phrase table for source " + reverseTable2.sourceID + " contains " + targetWords);
 
-				BitSet newCoverageVector = new BitSet();
-				newCoverageVector.set(j, j+rhs.size());
-				newCoverageVector.or(hypothesisToExtend.coverageVector);
+				// Get the set of source2 reverse rules that match the partial translation
+				BilingualRuleCollection reverseRules2 = reverseTable2.get(targetWords);
 				
-				Hypothesis hypothesis = new Hypothesis(hypothesisToExtend, rhs, newCoverageVector, newCoverage, score);
-				logger.fine("Extending hypothesis: " + hypothesisToExtend + "   (coverage==" + previousCoverage + ")");
-				logger.fine("Adding to stack " + newCoverage + " : " + hypothesis);
-				stacks.get(newCoverage).add(hypothesis);
+				List<BitSet> source1SubLists = new ArrayList<BitSet>();
+				
+				// Find all locations in source1 where sourcePhrase1 is applicable
+				List<String> sourcePhrase1 = translationOptions1.lhs;
+				List<Integer> sourcePhrase1Matches = indicesOfSubList(source1, sourcePhrase1);
+				if (logger.isLoggable(Level.FINE)) logger.fine("Source 1 phrase " + sourcePhrase1 + " matches input 1 in " + sourcePhrase1Matches.size() + " places.");
+				for (int j1 : sourcePhrase1Matches) {
+					BitSet newCoverageVector1 = new BitSet();
+					newCoverageVector1.set(j1, j1+targetWords.size());
+					newCoverageVector1.or(hypothesisToExtend.coverageVector.get(0));
+					
+					source1SubLists.add(newCoverageVector1);
+				}
+
+				// For each source2 phrase that corresponds with the partial translation targetWords...
+				for (int i2=0; i2<reverseRules2.size(); i2++) {
+				
+					// Get the source2 phrase that corresponds with the partial translation, and its score
+					List<String> sourcePhrase2 = reverseRules2.rightHandSides.get(i2);
+					float score2 = reverseRules2.scores.get(i2);
+					
+					logger.fine("Considering source 2 phrase " + sourcePhrase2);
+					
+					// Find all locations in source2 where sourcePhrase2 might be applicable
+					for (int j2 : indicesOfSubList(source2, sourcePhrase2)) {
+						BitSet newCoverageVector2 = new BitSet();
+						newCoverageVector2.set(j2, j2+sourcePhrase2.size());
+						
+						if (! coverageVector2.intersects(newCoverageVector2)) {
+							
+							if (logger.isLoggable(Level.FINE)) logger.fine("Source 2 phrase " + sourcePhrase2 + " matches input 2 at " + newCoverageVector2.nextSetBit(0));
+							newCoverageVector2.or(coverageVector2);
+							
+							
+							for (BitSet newCoverageVector1 : source1SubLists) {
+								
+								List<BitSet> newCoverageVectors = new ArrayBackedList<BitSet>(newCoverageVector1, newCoverageVector2);
+								List<Float> newScores = new ArrayBackedList<Float>(score1, score2);
+								
+								logger.finest("Extending hypothesis: " + hypothesisToExtend + "   (coverage vectors==" + newCoverageVectors + ", scores==" + newScores + ")");
+								Hypothesis hypothesis = new Hypothesis(hypothesisToExtend, targetWords, newCoverageVectors, newScores);
+								
+								int stackNumber = hypothesis.coverageCardinality(0);
+								logger.finest("Adding to stack " + stackNumber + " : " + hypothesis);
+								stacks.get(stackNumber).add(hypothesis);
+							}
+							
+						} else if (logger.isLoggable(Level.FINE)) {
+							logger.fine("Source 2 phrase " + sourcePhrase2 + " does NOT match input 2.");
+						}
+						
+					}
+					
+				}
+				
+				//for (BilingualRuleCollection reverseRules2 : reverseTable2.getApplicableTranslationOptions(source2, hypothesisToExtend, hypothesisToExtend.constraintVector2)) {
+
+//					int newCoverageArity1 = targetWords.size() + coverage1Arity;
+
+//					for (int j : indicesOfSubList(source1, translationOptions1.lhs)) {
+//
+//						BitSet newCoverageVector = new BitSet();
+//						newCoverageVector.set(j, j+targetWords.size());
+//						newCoverageVector.or(hypothesisToExtend.coverageVector.get(0));
+
+//						Hypothesis hypothesis = new Hypothesis(hypothesisToExtend, targetWords, newCoverageVector, newCoverage, score1);
+//						logger.fine("Extending hypothesis: " + hypothesisToExtend + "   (coverage==" + coverage1Arity + ")");
+//						logger.fine("Adding to stack " + newCoverage + " : " + hypothesis);
+//						stacks.get(newCoverage).add(hypothesis);
+//					}
+				//}
+
+			} else {
+				logger.fine("Phrase table for source " + reverseTable2.sourceID + " does NOT contain " + targetWords);
 			}
 		}
 		
