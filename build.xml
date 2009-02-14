@@ -3,6 +3,7 @@
 <project name="JHU Decoder" default="compile" basedir=".">
 	
 	<property name="src" value="./src" />
+	<property name="exp" value="./experimental" />
 	<property name="test" value="./test" />
 	<property name="build" value="./bin" />
 	<property name="lib" value="./lib" />
@@ -34,8 +35,11 @@
 	
 	<!-- Compile the Java code -->
 	<target name="compile" depends="init,srilm">
-		<javac compiler="javac1.5" srcdir="${src}" destdir="${build}" 
-			classpath="${bdb}:${cli}" debug="on" encoding="utf8"/> 
+		<javac compiler="javac1.5" destdir="${build}" 
+			classpath="${bdb}:${cli}" debug="on" encoding="utf8">
+			<src path="${src}" />
+			<src path="${exp}" />
+		</javac>
 	</target>
 
 	
